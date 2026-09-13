@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Dota 2 Team MMR Validator</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1e222b;
+    --line: #2a2f3a;
+    --text: #e8e6df;
+    --text-dim: #8b8f9a;
+    --accent: #c23c2f;
+    --accent-2: #b89b5e;
+    --ok: #4a9d6f;
+    --bad: #c23c2f;
+    --warn: #b89b5e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, Arial, sans-serif;
+    padding: 32px 16px 64px;
+  }
+  .wrap { max-width: 780px; margin: 0 auto; }
+  h1 {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    margin: 0 0 4px;
+    color: var(--text);
+  }
+  .sub {
+    color: var(--text-dim);
+    font-size: 13px;
+    margin: 0 0 24px;
+  }
+  .rules {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 12px 16px;
+    font-size: 12.5px;
+    color: var(--text-dim);
+    margin-bottom: 24px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+  }
+  .rules div b { color: var(--text); display: block; font-size: 13px; margin-bottom: 2px; }
+  table { width: 100%; border-collapse: collapse; }
+  thead th {
+    text-align: left;
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-dim);
+    font-weight: 500;
+    padding: 0 8px 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  tbody td { padding: 8px; vertical-align: middle; }
+  tbody tr { border-bottom: 1px solid var(--line); }
+  input[type="text"], input[type="number"] {
+    width: 100%;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    color: var(--text);
+    border-radius: 4px;
+    padding: 8px 10px;
+    font-size: 14px;
+  }
+  input[type="number"] { font-variant-numeric: tabular-nums; }
+  input:focus { outline: none; border-color: var(--accent-2); }
+  .mmr-cell { position: relative; }
+  .name-input { max-width: 130px; }
+  .weighted {
+    font-variant-numeric: tabular-nums;
+    font-size: 14px;
+    color: var(--text-dim);
+  }
+  .weighted.boosted { color: var(--warn); }
+  .rank-label {
+    font-size: 11.5px;
+    color: var(--accent-2);
+    margin-top: 2px;
+  }
+  .th-with-tip {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    position: relative;
+  }
+  .tip-icon {
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    border: 1px solid var(--text-dim);
+    color: var(--text-dim);
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .tip-icon:hover, .tip-icon.open { border-color: var(--accent-2); color: var(--accent-2); }
+  .tip-panel {
+    display: none;
+    position: absolute;
+    top: 22px;
+    left: 0;
+    z-index: 10;
+    width: 300px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 12px 14px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+  }
+  .tip-panel.open { display: block; }
+  .tip-panel table { width: 100%; }
+  .tip-panel thead th { border: none; padding: 0 4px 6px; font-size: 10.5px; }
+  .tip-panel tbody td { padding: 3px 4px; font-size: 12.5px; color: var(--text); border-bottom: none; }
+  .tip-panel tbody tr:nth-child(odd) { background: rgba(255,255,255,0.02); }
+  .tip-panel .medal-col { color: var(--accent-2); font-weight: 600; }
+  .tip-note {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid var(--line);
+    font-size: 11px;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+  .flag {
+    font-size: 11px;
+    color: var(--bad);
+    margin-top: 2px;
+  }
+  .flag.floor { color: var(--text-dim); }
+  .standin-note {
+    font-size: 11px;
+    color: var(--accent-2);
+    margin-top: 2px;
+  }
+  .weighted.substituted { color: var(--accent-2); }
+  .summary {
+    margin-top: 28px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 20px 24px;
+  }
+  .bar-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 10px;
+  }
+  .bar-row .label { font-size: 13px; color: var(--text-dim); }
+  .bar-row .value {
+    font-size: 28px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .bar-row .value .cap { font-size: 15px; color: var(--text-dim); font-weight: 400; }
+  .bar-outer {
+    height: 10px;
+    background: var(--panel-2);
+    border-radius: 5px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+  }
+  .bar-inner {
+    height: 100%;
+    background: var(--ok);
+    transition: width 0.2s ease, background 0.2s ease;
+  }
+  .bar-inner.over { background: var(--bad); }
+  .verdict {
+    margin-top: 16px;
+    padding: 12px 16px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .verdict.pass { background: rgba(74,157,111,0.15); color: var(--ok); border: 1px solid rgba(74,157,111,0.4); }
+  .verdict.fail { background: rgba(194,60,47,0.15); color: var(--bad); border: 1px solid rgba(194,60,47,0.4); }
+  .issues {
+    margin-top: 10px;
+    font-size: 12.5px;
+    color: var(--bad);
+    line-height: 1.6;
+  }
+  .issues .item { display: block; }
+  .lookup {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 24px;
+  }
+  .lookup-title {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin: 0 0 10px;
+  }
+  .lookup-controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  select {
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    color: var(--text);
+    border-radius: 4px;
+    padding: 8px 10px;
+    font-size: 14px;
+  }
+  select:focus { outline: none; border-color: var(--accent-2); }
+  .lookup-result {
+    margin-top: 14px;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .lookup-result .range {
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .lookup-result .max {
+    font-size: 24px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .lookup-result .max-label {
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .import {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 24px;
+  }
+  .import-title {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin: 0 0 10px;
+  }
+  .import-controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .import-controls select { flex: 1; min-width: 180px; }
+  button.load-btn {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    padding: 8px 16px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button.load-btn:hover { background: #a53225; }
+  button.load-btn:disabled { background: var(--panel-2); color: var(--text-dim); cursor: not-allowed; }
+  .import-status {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .import-status.error { color: var(--bad); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Dota 2 team MMR validator</h1>
+  <p class="sub">Enter each player's MMR to check the team against the weighted cap.</p>
+
+  <div class="rules">
+    <div><b>Team cap</b>26,500 weighted</div>
+    <div><b>Soft cap</b>6,000 (1.5x above)</div>
+    <div><b>1.5x → 2x</b>at 6,500</div>
+    <div><b>Hard cap / floor</b>6,700 / 1,700</div>
+    <div><b>Standins</b>up to 2 per team</div>
+    <div><b>Standin MMR</b>within 800 of player</div>
+  </div>
+
+  <div class="import">
+    <p class="import-title">Load a team from the SEAL public roster sheet</p>
+    <div class="import-controls">
+      <select id="teamSelect" disabled><option>Loading roster...</option></select>
+      <button class="load-btn" id="loadTeamBtn" disabled onclick="loadSelectedTeam()">Load team</button>
+    </div>
+    <div class="import-status" id="importStatus">Fetching sheet data...</div>
+  </div>
+
+  <div class="lookup">
+    <p class="lookup-title">Look up a medal and star</p>
+    <div class="lookup-controls">
+      <select id="lookupMedal"></select>
+      <select id="lookupStar"></select>
+    </div>
+    <div class="lookup-result" id="lookupResult"></div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:32%">Player</th>
+        <th style="width:22%">
+          <div class="th-with-tip">
+            <span>MMR</span>
+            <span class="tip-icon" id="tipIcon" onclick="toggleTip()">i</span>
+            <div class="tip-panel" id="tipPanel">
+              <table>
+                <thead><tr><th>Medal</th><th>Star range</th><th>MMR</th></tr></thead>
+                <tbody id="tipBody"></tbody>
+              </table>
+              <div class="tip-note">Last thresholds Valve published, before the July 31, 2026 MMR squish compressed the scale. No new boundaries have been announced since, so treat these as reference points rather than exact current cutoffs.</div>
+            </div>
+          </div>
+        </th>
+        <th style="width:20%">Standin MMR</th>
+        <th>Weighted contribution</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+
+  <div class="summary">
+    <div class="bar-row">
+      <span class="label">Total weighted MMR</span>
+      <span class="value"><span id="total">0</span> <span class="cap">/ 26,500</span></span>
+    </div>
+    <div class="bar-outer"><div class="bar-inner" id="bar"></div></div>
+    <div class="verdict" id="verdict"></div>
+    <div class="issues" id="issues"></div>
+  </div>
+</div>
+
+<script>
+const CAP = 26500;
+const SOFT = 6000;
+const MID = 6500;
+const HARD = 6700;
+const FLOOR = 1700;
+
+const RANKS = [
+  { name: "Herald",   floor: 0 },
+  { name: "Guardian", floor: 770 },
+  { name: "Crusader", floor: 1540 },
+  { name: "Archon",   floor: 2310 },
+  { name: "Legend",   floor: 3080 },
+  { name: "Ancient",  floor: 3850 },
+  { name: "Divine",   floor: 4620 },
+  { name: "Immortal", floor: 5620 },
+];
+
+function getRankLabel(mmr) {
+  if (mmr < 0) mmr = 0;
+  if (mmr >= RANKS[7].floor) return "Immortal";
+  let tier = RANKS[0];
+  for (let i = RANKS.length - 2; i >= 0; i--) {
+    if (mmr >= RANKS[i].floor) { tier = RANKS[i]; break; }
+  }
+  const nextFloor = RANKS[RANKS.indexOf(tier) + 1].floor;
+  const span = nextFloor - tier.floor;
+  const step = span / 5;
+  let star = Math.floor((mmr - tier.floor) / step) + 1;
+  if (star > 5) star = 5;
+  return `${tier.name} ${star}`;
+}
+
+function buildTipTable() {
+  const body = document.getElementById("tipBody");
+  body.innerHTML = "";
+  for (let i = 0; i < RANKS.length; i++) {
+    const tier = RANKS[i];
+    const tr = document.createElement("tr");
+    if (tier.name === "Immortal") {
+      tr.innerHTML = `<td class="medal-col">Immortal</td><td>&mdash;</td><td>${tier.floor.toLocaleString()}+</td>`;
+      body.appendChild(tr);
+      continue;
+    }
+    const nextFloor = RANKS[i + 1].floor;
+    const span = nextFloor - tier.floor;
+    const step = span / 5;
+    for (let star = 1; star <= 5; star++) {
+      const lo = Math.round(tier.floor + step * (star - 1));
+      const hi = Math.round(tier.floor + step * star);
+      const row = document.createElement("tr");
+      row.innerHTML = `<td class="medal-col">${star === 1 ? tier.name : ""}</td><td>Star ${star}</td><td>${lo.toLocaleString()}&ndash;${hi.toLocaleString()}</td>`;
+      body.appendChild(row);
+    }
+  }
+}
+
+function starRange(tierIndex, star) {
+  const tier = RANKS[tierIndex];
+  const nextFloor = RANKS[tierIndex + 1].floor;
+  const span = nextFloor - tier.floor;
+  const step = span / 5;
+  const lo = Math.round(tier.floor + step * (star - 1));
+  const hi = Math.round(tier.floor + step * star);
+  return { lo, hi };
+}
+
+function populateLookup() {
+  const medalSel = document.getElementById("lookupMedal");
+  const starSel = document.getElementById("lookupStar");
+
+  medalSel.innerHTML = "";
+  RANKS.forEach((tier, i) => {
+    const opt = document.createElement("option");
+    opt.value = i;
+    opt.textContent = tier.name;
+    medalSel.appendChild(opt);
+  });
+
+  function refreshStars() {
+    const medalIdx = Number(medalSel.value);
+    starSel.innerHTML = "";
+    if (RANKS[medalIdx].name === "Immortal") {
+      starSel.disabled = true;
+      const opt = document.createElement("option");
+      opt.textContent = "No stars";
+      starSel.appendChild(opt);
+    } else {
+      starSel.disabled = false;
+      for (let s = 1; s <= 5; s++) {
+        const opt = document.createElement("option");
+        opt.value = s;
+        opt.textContent = "Star " + s;
+        starSel.appendChild(opt);
+      }
+    }
+    updateLookupResult();
+  }
+
+  function updateLookupResult() {
+    const medalIdx = Number(medalSel.value);
+    const tier = RANKS[medalIdx];
+    const resultEl = document.getElementById("lookupResult");
+    if (tier.name === "Immortal") {
+      resultEl.innerHTML = `<span class="max">${tier.floor.toLocaleString()}+</span><span class="max-label">no upper bound, leaderboard territory</span>`;
+      return;
+    }
+    const star = Number(starSel.value);
+    const { lo, hi } = starRange(medalIdx, star);
+    resultEl.innerHTML = `<span class="range">${lo.toLocaleString()} &ndash;</span><span class="max">${hi.toLocaleString()}</span><span class="max-label">max MMR for ${tier.name} ${star}</span>`;
+  }
+
+  medalSel.addEventListener("change", refreshStars);
+  starSel.addEventListener("change", updateLookupResult);
+  refreshStars();
+}
+
+function toggleTip() {
+  document.getElementById("tipPanel").classList.toggle("open");
+  document.getElementById("tipIcon").classList.toggle("open");
+}
+
+document.addEventListener("click", (e) => {
+  const panel = document.getElementById("tipPanel");
+  const icon = document.getElementById("tipIcon");
+  if (!panel.contains(e.target) && e.target !== icon && panel.classList.contains("open")) {
+    panel.classList.remove("open");
+    icon.classList.remove("open");
+  }
+});
+
+const SHEET_ID = "1jB-XaJjHgvI7-8itaM0quM73-QgoXsZ8QlN3eWv7euU";
+const SHEET_GID = "0";
+let rosterTeams = [];
+
+function fetchRoster() {
+  const callbackName = "handleRosterData";
+  window[callbackName] = (resp) => {
+    try {
+      rosterTeams = parseRoster(resp);
+      populateTeamSelect();
+    } catch (err) {
+      showImportError("Couldn't parse the sheet. Check that its structure hasn't changed.");
+    }
+  };
+
+  const script = document.createElement("script");
+  script.src = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?gid=${SHEET_GID}&tqx=out:json;responseHandler:${callbackName}`;
+  script.onerror = () => showImportError("Couldn't reach the sheet. Confirm it's still shared as \"anyone with the link can view\".");
+  document.body.appendChild(script);
+}
+
+function cellVal(row, idx) {
+  return row.c[idx] && row.c[idx].v !== null && row.c[idx].v !== undefined ? row.c[idx].v : "";
+}
+
+function parseRoster(resp) {
+  const rows = resp.table.rows;
+  const teams = [];
+  let current = null;
+
+  rows.forEach((row) => {
+    if (!row.c) return;
+    const teamName = String(cellVal(row, 0)).trim();
+    const proName = String(cellVal(row, 2)).trim();
+    const mmrRaw = cellVal(row, 4);
+
+    if (teamName !== "") {
+      if (current) teams.push(current);
+      current = { name: teamName, players: [] };
+    }
+    if (proName !== "" && current) {
+      const mmr = typeof mmrRaw === "number" ? mmrRaw : parseInt(String(mmrRaw).replace(/[^0-9]/g, ""), 10);
+      current.players.push({ name: proName, mmr: isNaN(mmr) ? 0 : mmr });
+    }
+  });
+  if (current) teams.push(current);
+
+  return teams.filter(t => t.players.length > 0);
+}
+
+function populateTeamSelect() {
+  const sel = document.getElementById("teamSelect");
+  const btn = document.getElementById("loadTeamBtn");
+  const status = document.getElementById("importStatus");
+
+  if (rosterTeams.length === 0) {
+    showImportError("No teams found in the sheet.");
+    return;
+  }
+
+  sel.innerHTML = "";
+  rosterTeams.forEach((team, i) => {
+    const opt = document.createElement("option");
+    opt.value = i;
+    opt.textContent = `${team.name} (${team.players.length} players)`;
+    sel.appendChild(opt);
+  });
+  sel.disabled = false;
+  btn.disabled = false;
+  status.className = "import-status";
+  status.textContent = `${rosterTeams.length} teams loaded from the sheet.`;
+}
+
+function showImportError(msg) {
+  const status = document.getElementById("importStatus");
+  status.className = "import-status error";
+  status.textContent = msg;
+}
+
+function loadSelectedTeam() {
+  const sel = document.getElementById("teamSelect");
+  const team = rosterTeams[Number(sel.value)];
+  if (!team) return;
+
+  const status = document.getElementById("importStatus");
+  const slots = Math.min(team.players.length, 5);
+
+  for (let i = 0; i < slots; i++) {
+    players[i].name = team.players[i].name;
+    players[i].mmr = team.players[i].mmr;
+    players[i].standin = null;
+  }
+  for (let i = slots; i < players.length; i++) {
+    players[i].name = `Position ${i + 1}`;
+    players[i].mmr = 0;
+    players[i].standin = null;
+  }
+
+  buildRows();
+  recalc();
+
+  status.className = "import-status";
+  status.textContent = `Loaded ${team.name}${team.players.length > 5 ? ` (showing first 5 of ${team.players.length} listed players)` : ""}.`;
+}
+
+const players = [
+  { name: "Position 1", mmr: 6000, standin: null },
+  { name: "Position 2", mmr: 6000, standin: null },
+  { name: "Position 3", mmr: 5500, standin: null },
+  { name: "Position 4", mmr: 5000, standin: null },
+  { name: "Position 5", mmr: 4000, standin: null },
+];
+
+function weightedValue(mmr) {
+  let effective = mmr < FLOOR ? FLOOR : mmr;
+  let flooredApplied = mmr < FLOOR;
+  if (effective <= SOFT) {
+    return { weighted: effective, flooredApplied };
+  }
+  if (effective <= MID) {
+    const w = SOFT + (effective - SOFT) * 1.5;
+    return { weighted: w, flooredApplied };
+  }
+  const cappedForCalc = Math.min(effective, HARD);
+  const w = SOFT + (MID - SOFT) * 1.5 + (cappedForCalc - MID) * 2;
+  return { weighted: w, flooredApplied, overHard: effective > HARD };
+}
+
+function fmt(n) {
+  return Math.round(n).toLocaleString();
+}
+
+function buildRows() {
+  const rowsEl = document.getElementById("rows");
+  rowsEl.innerHTML = "";
+
+  players.forEach((p, i) => {
+    const tr = document.createElement("tr");
+
+    const nameTd = document.createElement("td");
+    const nameInput = document.createElement("input");
+    nameInput.type = "text";
+    nameInput.className = "name-input";
+    nameInput.value = p.name;
+    nameInput.addEventListener("input", (e) => { players[i].name = e.target.value; });
+    nameTd.appendChild(nameInput);
+
+    const mmrTd = document.createElement("td");
+    mmrTd.className = "mmr-cell";
+    const mmrInput = document.createElement("input");
+    mmrInput.type = "text";
+    mmrInput.inputMode = "numeric";
+    mmrInput.pattern = "[0-9]*";
+    mmrInput.autocomplete = "off";
+    mmrInput.value = p.mmr;
+    mmrInput.addEventListener("input", (e) => {
+      const digits = e.target.value.replace(/[^0-9]/g, "");
+      if (digits !== e.target.value) e.target.value = digits;
+      players[i].mmr = digits === "" ? 0 : Number(digits);
+      recalc();
+    });
+    mmrTd.appendChild(mmrInput);
+    const rankLabel = document.createElement("div");
+    rankLabel.className = "rank-label";
+    rankLabel.id = "rank-" + i;
+    mmrTd.appendChild(rankLabel);
+
+    const standinTd = document.createElement("td");
+    standinTd.className = "mmr-cell";
+    const standinInput = document.createElement("input");
+    standinInput.type = "text";
+    standinInput.inputMode = "numeric";
+    standinInput.pattern = "[0-9]*";
+    standinInput.autocomplete = "off";
+    standinInput.placeholder = "Optional";
+    standinInput.value = p.standin === null || p.standin === undefined ? "" : p.standin;
+    standinInput.addEventListener("input", (e) => {
+      const digits = e.target.value.replace(/[^0-9]/g, "");
+      if (digits !== e.target.value) e.target.value = digits;
+      players[i].standin = digits === "" ? null : Number(digits);
+      recalc();
+    });
+    standinTd.appendChild(standinInput);
+    const standinRank = document.createElement("div");
+    standinRank.className = "rank-label";
+    standinRank.id = "standin-rank-" + i;
+    standinTd.appendChild(standinRank);
+    const standinFlag = document.createElement("div");
+    standinFlag.id = "standin-flag-" + i;
+    standinTd.appendChild(standinFlag);
+
+    const wTd = document.createElement("td");
+    const wSpan = document.createElement("div");
+    wSpan.className = "weighted";
+    wSpan.id = "weighted-" + i;
+    wTd.appendChild(wSpan);
+    const standinNote = document.createElement("div");
+    standinNote.className = "standin-note";
+    standinNote.id = "standin-note-" + i;
+    wTd.appendChild(standinNote);
+    const flag = document.createElement("div");
+    flag.id = "flag-" + i;
+    wTd.appendChild(flag);
+
+    tr.appendChild(nameTd);
+    tr.appendChild(mmrTd);
+    tr.appendChild(standinTd);
+    tr.appendChild(wTd);
+    rowsEl.appendChild(tr);
+  });
+}
+
+function recalc() {
+  let total = 0;
+  let hasHardViolation = false;
+  let standinCount = 0;
+
+  players.forEach((p, i) => {
+    const isStandinActive = p.standin !== null && p.standin !== undefined;
+    if (isStandinActive) standinCount++;
+    const activeMmr = isStandinActive ? p.standin : p.mmr;
+
+    const { weighted, flooredApplied, overHard } = weightedValue(activeMmr);
+    total += weighted;
+    if (overHard) hasHardViolation = true;
+
+    const wSpan = document.getElementById("weighted-" + i);
+    wSpan.className = "weighted" + (weighted > activeMmr ? " boosted" : "") + (isStandinActive ? " substituted" : "");
+    wSpan.textContent = fmt(weighted) + (weighted > activeMmr ? ` (+${fmt(weighted - activeMmr)})` : "");
+
+    document.getElementById("rank-" + i).textContent = getRankLabel(p.mmr);
+
+    const standinNote = document.getElementById("standin-note-" + i);
+    standinNote.textContent = isStandinActive ? `Standin counted for this slot` : "";
+
+    const standinRank = document.getElementById("standin-rank-" + i);
+    standinRank.textContent = isStandinActive ? getRankLabel(p.standin) : "";
+
+    const standinFlag = document.getElementById("standin-flag-" + i);
+    if (isStandinActive) {
+      const diff = Math.abs(p.standin - p.mmr);
+      if (diff > 800) {
+        standinFlag.className = "flag";
+        standinFlag.textContent = `Must be within 800 of player's MMR (off by ${fmt(diff - 800)})`;
+      } else {
+        standinFlag.className = "flag";
+        standinFlag.textContent = "";
+      }
+    } else {
+      standinFlag.className = "flag";
+      standinFlag.textContent = "";
+    }
+
+    const flag = document.getElementById("flag-" + i);
+    if (overHard) {
+      flag.className = "flag";
+      flag.textContent = `Exceeds hard cap of ${HARD.toLocaleString()}`;
+    } else if (flooredApplied) {
+      flag.className = "flag floor";
+      flag.textContent = `Below floor, counted as ${FLOOR.toLocaleString()}`;
+    } else {
+      flag.className = "flag";
+      flag.textContent = "";
+    }
+  });
+
+  document.getElementById("total").textContent = fmt(total);
+
+  const pct = Math.min((total / CAP) * 100, 100);
+  const bar = document.getElementById("bar");
+  bar.style.width = pct + "%";
+  bar.className = "bar-inner" + (total > CAP ? " over" : "");
+
+  const verdictEl = document.getElementById("verdict");
+  const issuesEl = document.getElementById("issues");
+  const issues = [];
+
+  let hasDiffViolation = false;
+  players.forEach((p) => {
+    if (p.standin !== null && p.standin !== undefined && Math.abs(p.standin - p.mmr) > 800) {
+      hasDiffViolation = true;
+    }
+  });
+
+  if (hasDiffViolation) {
+    issues.push("One or more standins are more than 800 MMR away from the player they're replacing.");
+  }
+
+  if (standinCount > 2) {
+    issues.push(`Only two standins are allowed per team (currently ${standinCount} filled in).`);
+  }
+
+  if (hasHardViolation) {
+    issues.push("One or more roster slots exceed the individual hard cap of 6,700 MMR. This roster is not eligible regardless of team total.");
+  }
+
+  const overBy = total - CAP;
+  if (overBy > 0) {
+    issues.push(`Team total exceeds the cap by ${fmt(overBy)} weighted MMR.`);
+  }
+
+  if (hasHardViolation || overBy > 0 || hasDiffViolation || standinCount > 2) {
+    verdictEl.className = "verdict fail";
+    if (hasHardViolation) {
+      verdictEl.textContent = "Not eligible: hard cap exceeded";
+    } else if (overBy > 0) {
+      verdictEl.textContent = "Not eligible: over team cap";
+    } else if (standinCount > 2) {
+      verdictEl.textContent = "Not eligible: too many standins";
+    } else {
+      verdictEl.textContent = "Not eligible: standin MMR out of range";
+    }
+  } else {
+    verdictEl.className = "verdict pass";
+    verdictEl.textContent = `Eligible: ${fmt(CAP - total)} weighted MMR under the cap`;
+  }
+
+  issuesEl.innerHTML = "";
+  issues.forEach(msg => {
+    const div = document.createElement("div");
+    div.className = "item";
+    div.textContent = msg;
+    issuesEl.appendChild(div);
+  });
+}
+
+buildRows();
+recalc();
+buildTipTable();
+populateLookup();
+fetchRoster();
+</script>
+</body>
+</html>
